@@ -1,4 +1,4 @@
-var bmmIdentifier = 'over-index master';
+var bmmIdentifier = 'unique string for other campaigns';
 var includeDSA = 'No';
 var dsaIdentifier = 'n/a';
 
@@ -38,7 +38,8 @@ function getExactKeywords() {
 
     var keywordsIter = AdWordsApp.keywords()
         .withCondition('CampaignStatus = ENABLED')
-        .withCondition('CampaignName DOES_NOT_CONTAIN_IGNORE_CASE "//"')    
+        .withCondition('CampaignName DOES_NOT_CONTAIN_IGNORE_CASE "//"')   
+        .withCondition('CampaignName CONTAINS_IGNORE_CASE "over-indexed kw"')    
         .withCondition('AdGroupStatus = ENABLED')
         .withCondition("LabelNames CONTAINS_NONE ['low search volume']")        
         .withCondition('Status = ENABLED')

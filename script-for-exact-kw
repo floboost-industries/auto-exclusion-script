@@ -1,0 +1,193 @@
+var bmmIdentifier = 'over-index master';
+var includeDSA = 'No';
+var dsaIdentifier = 'n/a';
+
+//some other variables, no need to edit
+var keywordsPerList = 5000;
+var chunks;
+var accountName = AdWordsApp.currentAccount().getName();
+var numLists;
+
+function main() {
+
+    // Find exact match Keywords
+    var exactKeywords = getExactKeywords();
+
+    // Find out if Exact NKL already exists
+    if (lookForExact()) {
+        // if true, check if the amount of lists is correct
+        checkNumberOfLists();
+        // then, remove alle present negative keywords
+        removeSNK();
+    } else {
+        // if false, create one or more new NKL's
+        createNKL();
+    }
+
+    // Add keywords to NKL
+    addKeywordsToNKL(exactKeywords);
+
+    // Add (mbm) & (dsa) campaigns
+    applyToCampaigns();
+}
+
+function getExactKeywords() {
+    var keywordsOne = [];
+    var keywordsTwo = [];
+    var map = {};
+
+    var keywordsIter = AdWordsApp.keywords()
+        .withCondition('CampaignStatus = ENABLED')
+        .withCondition('CampaignName DOES_NOT_CONTAIN_IGNORE_CASE "//"')    
+        .withCondition('AdGroupStatus = ENABLED')
+        .withCondition("LabelNames CONTAINS_NONE ['low search volume']")        
+        .withCondition('Status = ENABLED')
+        .withCondition('KeywordMatchType = EXACT')
+        .get();
+
+    // Build the map for deduplication
+    while (keywordsIter.hasNext()) {
+        var keyword = keywordsIter.next();
+        var text = keyword.getText();
+        if (map[text]) {
+            // If is already in  array then skip
+            continue;
+        } else {
+            // If not, add a new keyword to the map.
+            map[text] = text;
+            keywordsOne.push(text);
+        }
+    }
+
+    chunks = Math.ceil(keywordsOne.length / keywordsPerList);
+
+    // split the keywords in a 2-dimensional array again
+    for (var y = 0; y < chunks; y++) {
+        keywordsTwo[y] = keywordsOne.splice(0, keywordsPerList);
+    }
+    return keywordsTwo;
+}
+
+function lookForExact() {
+    var nkls = AdWordsApp.negativeKeywordLists()
+        .withCondition('Name = "over-indexed kw 1"')
+        .get();
+
+    if (nkls.totalNumEntities() > 0) {
+        return true;
+    }
+}
+
+function checkNumberOfLists() {
+    var nkls = AdWordsApp.negativeKeywordLists()
+        .withCondition('Name CONTAINS "over-indexed kw "')
+        .get();
+
+    numLists = nkls.totalNumEntities();
+
+    if (numLists < chunks) {
+        // create an extra list
+        createNKL();
+    } else if (numLists > chunks) {
+        // it's not possible to remove NKL's with AdWords scripts
+        Logger.log('Remove any empty Negative Keyword Lists in the account "' + accountName + '"');
+    }
+}
+
+function removeSNK() {
+    for (var y = 1; y < numLists + 1; y++) {
+
+        var nklI = AdWordsApp.negativeKeywordLists()
+            .withCondition('Name = "over-indexed kw ' + y + '"')
+            .get();
+
+        var snk = [];
+
+        while (nklI.hasNext()) {
+            var nkl = nklI.next();
+            var snkI = nkl.negativeKeywords().get();
+            while (snkI.hasNext()) {
+                snk.push(snkI.next());
+            }
+            for (var i = 0; i < snk.length; i++) {
+                snk[i].remove();
+            }
+        }
+    }
+}
+
+function createNKL() {
+    for (var y = 1; y < chunks + 1; y++) {
+        var nklO = AdWordsApp.newNegativeKeywordListBuilder()
+            .withName('over-indexed kw ' + y)
+            .build();
+    }
+}
+
+function addKeywordsToNKL(input) {
+    for (var y = 0; y < chunks; y++) {
+        var x = 0;
+        var name = 'over-indexed kw ' + (y + 1);
+        var keywords = [];
+        keywords.push(input[y]);
+
+        // get the NKL('s) with the name "over-indexed kw" in it
+        var nklI = AdWordsApp.negativeKeywordLists()
+            .withCondition('Name = "' + name + '"')
+            .get();
+
+        // while having one...
+        while (nklI.hasNext()) {
+            var nkl = nklI.next();
+
+            // ...try to add the keywords one by one
+            try {
+                nkl.addNegativeKeywords(keywords[x]);
+                x++;
+            } catch (err) {
+                Logger.log('Error: ' + keywords[x]);
+            }
+        }
+        keywords.length = 0;
+    }
+}
+
+function applyToCampaigns() {
+
+    // get all active campaigns
+    var campaignIDs = [];
+    var campaignIterator = AdWordsApp.campaigns()
+        .withCondition('Status = ENABLED')
+        .get();
+
+    while (campaignIterator.hasNext()) {
+        var campaign = campaignIterator.next();
+        var campaignName = campaign.getName();
+        // if campaign name contains (mbm) or (dsa), push to array
+        if (campaignName.indexOf(bmmIdentifier) != -1) {
+            campaignIDs.push(campaign.getId());
+        }
+        if (includeDSA == 'Yes' && campaignName.indexOf(dsaIdentifier) != -1) {
+            campaignIDs.push(campaign.getId());
+        }
+    }
+
+    // apply all NKL's to the selected campaigns
+    for (var y = 1; y < chunks + 1; y++) {
+
+        var nklI = AdWordsApp.negativeKeywordLists()
+            .withCondition('Name = "over-indexed kw ' + y + '"')
+            .get();
+
+        while (nklI.hasNext()) {
+            var nkl = nklI.next();
+            var campaignIterator = AdWordsApp.campaigns()
+                .withIds(campaignIDs)
+                .get();
+            while (campaignIterator.hasNext()) {
+                var campaign = campaignIterator.next();
+                campaign.addNegativeKeywordList(nkl);
+            }
+        }
+    }
+}
